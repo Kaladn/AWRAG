@@ -5,6 +5,8 @@ from pathlib import Path
 
 from awrag.engine import intake, query, status, symbol_for
 
+DATASET_ID = "dataset_under_test"
+
 
 def assert_protected_notice(payload: dict) -> None:
     assert payload["copyright"] == "Copyright (c) 2026 Lee Mercey. Owner: Cortex Evolved Systems. All rights reserved."
@@ -23,9 +25,9 @@ def test_intake_writes_dataset_local_counts_and_lexicon(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = intake(tmp_path / "runtime", "reviewer_docs", source)
+    result = intake(tmp_path / "runtime", DATASET_ID, source)
 
-    dataset_root = tmp_path / "runtime" / "datasets" / "reviewer_docs"
+    dataset_root = tmp_path / "runtime" / "datasets" / DATASET_ID
     assert result["scope"] == "dataset_local"
     assert result["persistent_memory"] is False
     assert (dataset_root / "counts" / "anchor_counts.awbin").exists()
@@ -60,9 +62,9 @@ def test_demo_uses_native_binary_counts_not_sqlite(tmp_path: Path) -> None:
     source = tmp_path / "source.txt"
     source.write_text("Native binary counts stay dataset-local.", encoding="utf-8")
 
-    result = intake(tmp_path / "runtime", "reviewer_docs", source)
-    dataset_root = tmp_path / "runtime" / "datasets" / "reviewer_docs"
-    status_result = status(tmp_path / "runtime", "reviewer_docs")
+    result = intake(tmp_path / "runtime", DATASET_ID, source)
+    dataset_root = tmp_path / "runtime" / "datasets" / DATASET_ID
+    status_result = status(tmp_path / "runtime", DATASET_ID)
 
     assert result["count_backend"] == "awrag_native_binary_counts@1"
     assert status_result["count_backend"] == "awrag_native_binary_counts@1"
@@ -83,10 +85,10 @@ def test_public_symbols_are_fixed_six_byte_dataset_local_ids() -> None:
 
 def test_query_returns_awrag_owned_citations(tmp_path: Path) -> None:
     source = tmp_path / "source.txt"
-    source.write_text("Dataset counts stay local and reviewer data is not persistent memory.", encoding="utf-8")
-    intake(tmp_path / "runtime", "reviewer_docs", source)
+    source.write_text("Dataset counts stay local and provided data is not persistent memory.", encoding="utf-8")
+    intake(tmp_path / "runtime", DATASET_ID, source)
 
-    result = query(tmp_path / "runtime", "reviewer_docs", "Where do dataset counts stay?", top_k=2)
+    result = query(tmp_path / "runtime", DATASET_ID, "Where do dataset counts stay?", top_k=2)
 
     assert result["scope"] == "dataset_local"
     assert result["model_used"] == "none"
@@ -109,9 +111,9 @@ def test_query_returns_awrag_owned_citations(tmp_path: Path) -> None:
 def test_status_reports_no_persistent_memory(tmp_path: Path) -> None:
     source = tmp_path / "source.txt"
     source.write_text("Local counts only.", encoding="utf-8")
-    intake(tmp_path / "runtime", "reviewer_docs", source)
+    intake(tmp_path / "runtime", DATASET_ID, source)
 
-    result = status(tmp_path / "runtime", "reviewer_docs")
+    result = status(tmp_path / "runtime", DATASET_ID)
 
     assert result["scope"] == "dataset_local"
     assert result["persistent_memory"] is False
@@ -123,9 +125,9 @@ def test_every_persisted_artifact_has_indelible_watermark(tmp_path: Path) -> Non
     source = tmp_path / "source.txt"
     source.write_text("AWRAG citations point to local lines.\n\nCoordinates stay with the dataset.", encoding="utf-8")
 
-    receipt = intake(tmp_path / "runtime", "reviewer_docs", source)
-    query_result = query(tmp_path / "runtime", "reviewer_docs", "Where do citations point?")
-    dataset_root = tmp_path / "runtime" / "datasets" / "reviewer_docs"
+    receipt = intake(tmp_path / "runtime", DATASET_ID, source)
+    query_result = query(tmp_path / "runtime", DATASET_ID, "Where do citations point?")
+    dataset_root = tmp_path / "runtime" / "datasets" / DATASET_ID
 
     json_paths = [
         dataset_root / "dataset_manifest.json",
@@ -157,9 +159,9 @@ def test_query_prefers_compact_direct_evidence_over_large_noisy_block(tmp_path: 
         + "Dataset-local counts are explained here. The dataset lexicon and counts stay with the dataset.",
         encoding="utf-8",
     )
-    intake(tmp_path / "runtime", "reviewer_docs", source)
+    intake(tmp_path / "runtime", DATASET_ID, source)
 
-    result = query(tmp_path / "runtime", "reviewer_docs", "What explains dataset-local counts?", top_k=3)
+    result = query(tmp_path / "runtime", DATASET_ID, "What explains dataset-local counts?", top_k=3)
     top = result["answer_packet"]["locations"][0]
 
     assert "Dataset-local counts are explained here" in top["text"]
@@ -173,9 +175,9 @@ def test_query_ignores_standalone_punctuation_anchors(tmp_path: Path) -> None:
         "Dataset-local citation rules are explained in this compact block.",
         encoding="utf-8",
     )
-    intake(tmp_path / "runtime", "reviewer_docs", source)
+    intake(tmp_path / "runtime", DATASET_ID, source)
 
-    result = query(tmp_path / "runtime", "reviewer_docs", "What are the citation rules?", top_k=2)
+    result = query(tmp_path / "runtime", DATASET_ID, "What are the citation rules?", top_k=2)
     top = result["answer_packet"]["locations"][0]
 
     assert "Dataset-local citation rules" in top["text"]
@@ -186,10 +188,10 @@ def test_query_ignores_standalone_punctuation_anchors(tmp_path: Path) -> None:
 def test_rapid_queries_write_distinct_outputs(tmp_path: Path) -> None:
     source = tmp_path / "source.txt"
     source.write_text("Dataset counts stay local. Citations point to source coordinates.", encoding="utf-8")
-    intake(tmp_path / "runtime", "reviewer_docs", source)
+    intake(tmp_path / "runtime", DATASET_ID, source)
 
-    first = query(tmp_path / "runtime", "reviewer_docs", "Where do dataset counts stay?")
-    second = query(tmp_path / "runtime", "reviewer_docs", "Where do citations point?")
+    first = query(tmp_path / "runtime", DATASET_ID, "Where do dataset counts stay?")
+    second = query(tmp_path / "runtime", DATASET_ID, "Where do citations point?")
 
     assert first["output_path"] != second["output_path"]
     assert Path(first["output_path"]).exists()
@@ -203,9 +205,9 @@ def test_generic_question_words_do_not_outrank_content_anchors(tmp_path: Path) -
         "AWRAG citations are owned by the system and point to dataset-local coordinates.",
         encoding="utf-8",
     )
-    intake(tmp_path / "runtime", "reviewer_docs", source)
+    intake(tmp_path / "runtime", DATASET_ID, source)
 
-    result = query(tmp_path / "runtime", "reviewer_docs", "What does the project say about citations?", top_k=2)
+    result = query(tmp_path / "runtime", DATASET_ID, "What does the project say about citations?", top_k=2)
     top = result["answer_packet"]["locations"][0]
 
     assert "AWRAG citations are owned" in top["text"]
@@ -216,16 +218,16 @@ def test_generic_question_words_do_not_outrank_content_anchors(tmp_path: Path) -
 def test_acronym_surfaces_are_casefolded_anchors_not_letter_streams(tmp_path: Path) -> None:
     source = tmp_path / "source.md"
     source.write_text(
-        "Local LLM providers are configured through the model adapter.",
+        "Local ABC providers are configured through the model adapter.",
         encoding="utf-8",
     )
-    intake(tmp_path / "runtime", "reviewer_docs", source)
+    intake(tmp_path / "runtime", DATASET_ID, source)
 
-    result = query(tmp_path / "runtime", "reviewer_docs", "Where are llm providers configured?", top_k=1)
+    result = query(tmp_path / "runtime", DATASET_ID, "Where are abc providers configured?", top_k=1)
     top = result["answer_packet"]["locations"][0]
 
-    assert "Local LLM providers" in top["text"]
-    assert "llm" in top["matched_anchors"]
+    assert "Local ABC providers" in top["text"]
+    assert "abc" in top["matched_anchors"]
     assert "l" not in top["matched_anchors"]
     assert "m" not in top["matched_anchors"]
 
@@ -237,9 +239,9 @@ def test_evidence_qualifier_demotes_broad_heading_for_content(tmp_path: Path) ->
         "The next production step is to attach the evidence qualifier before final citation packet selection.",
         encoding="utf-8",
     )
-    intake(tmp_path / "runtime", "reviewer_docs", source)
+    intake(tmp_path / "runtime", DATASET_ID, source)
 
-    result = query(tmp_path / "runtime", "reviewer_docs", "What are the next production steps?", top_k=2)
+    result = query(tmp_path / "runtime", DATASET_ID, "What are the next production steps?", top_k=2)
     locations = result["answer_packet"]["locations"]
 
     assert locations
@@ -255,9 +257,9 @@ def test_evidence_qualifier_refuses_unsupported_low_coverage_query(tmp_path: Pat
         "Compliance policy updates are documented for local datasets.",
         encoding="utf-8",
     )
-    intake(tmp_path / "runtime", "reviewer_docs", source)
+    intake(tmp_path / "runtime", DATASET_ID, source)
 
-    result = query(tmp_path / "runtime", "reviewer_docs", "Where is the Mars database compliance policy defined?", top_k=3)
+    result = query(tmp_path / "runtime", DATASET_ID, "Where is the unavailable database compliance policy defined?", top_k=3)
 
     assert result["answer_packet"]["locations"] == []
     assert result["final_answer"]["status"] == "not_enough_information"
@@ -272,12 +274,12 @@ def test_nlp_resolver_does_not_invent_citations_or_use_rejected_locations(tmp_pa
     source = tmp_path / "source.md"
     source.write_text(
         "AWRAG citation ownership is controlled by the evidence packet.\n\n"
-        "Rejected text mentions Mars database policy but should not answer unsupported policy questions.",
+        "Rejected text mentions unavailable database policy but should not answer unsupported policy questions.",
         encoding="utf-8",
     )
-    intake(tmp_path / "runtime", "reviewer_docs", source)
+    intake(tmp_path / "runtime", DATASET_ID, source)
 
-    result = query(tmp_path / "runtime", "reviewer_docs", "What controls citation ownership evidence packet?", top_k=1)
+    result = query(tmp_path / "runtime", DATASET_ID, "What controls citation ownership evidence packet?", top_k=1)
     location_citations = [row["citation"] for row in result["answer_packet"]["locations"]]
 
     assert result["final_answer"]["citations"] == location_citations

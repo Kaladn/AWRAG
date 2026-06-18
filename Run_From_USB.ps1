@@ -1,6 +1,6 @@
 param(
     [string]$RuntimeRoot = "$env:USERPROFILE\AWRAG_Runtime",
-    [string]$DatasetId = "reviewer_docs"
+    [string]$DatasetId = "local_dataset"
 )
 
 $ErrorActionPreference = "Stop"

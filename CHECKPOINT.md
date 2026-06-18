@@ -73,8 +73,6 @@ Recent isolated reviewer-runtime runs verified:
 
 - fresh GitHub clone execution
 - 100-question local-doc stress run
-- TechQA dataset-local intake
-- SciFact dataset-local intake
 - cross-dataset miss ontology audit
 
 Key audit receipt:

@@ -133,7 +133,7 @@ python -m pytest tests -q
 python -m compileall src
 passed
 
-CLI smoke:
+CLI verification:
 count_backend = awrag_native_binary_counts@1
 anchor_counts.awbin created
 relation_counts.awbin created

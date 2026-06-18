@@ -16,6 +16,6 @@ python -m pip install -e $target
 
 Write-Host "AWRAG reviewer demo installed to: $target"
 Write-Host "Create a local runtime outside the install folder, then run:"
-Write-Host "  awrag init --runtime-root <local-runtime> --dataset-id reviewer_docs"
-Write-Host "  awrag intake --runtime-root <local-runtime> --dataset-id reviewer_docs --source <local-doc-folder>"
-Write-Host "  awrag query --runtime-root <local-runtime> --dataset-id reviewer_docs --question `"What does this data say?`""
+Write-Host "  awrag init --runtime-root <local-runtime> --dataset-id <dataset-id>"
+Write-Host "  awrag intake --runtime-root <local-runtime> --dataset-id <dataset-id> --source <local-doc-folder>"
+Write-Host "  awrag query --runtime-root <local-runtime> --dataset-id <dataset-id> --question `"What does this data say?`""
