@@ -96,6 +96,12 @@ def test_query_returns_awrag_owned_citations(tmp_path: Path) -> None:
     assert locations
     assert locations[0]["citation"].startswith("[AWCIT-")
     assert "Dataset counts stay local" in locations[0]["text"]
+    assert result["final_answer"]["resolver"] == "awrag_deterministic_nlp_resolver@1"
+    assert result["final_answer"]["model_used"] == "none"
+    assert result["final_answer"]["model_may_search"] is False
+    assert result["final_answer"]["status"] == "answered_from_awrag_locations"
+    assert result["final_answer"]["citations"] == [locations[0]["citation"]]
+    assert locations[0]["citation"] in result["final_answer"]["text"]
     output_path = Path(result["output_path"])
     assert_protected_notice(json.loads(output_path.read_text(encoding="utf-8")))
 
@@ -254,7 +260,28 @@ def test_evidence_qualifier_refuses_unsupported_low_coverage_query(tmp_path: Pat
     result = query(tmp_path / "runtime", "reviewer_docs", "Where is the Mars database compliance policy defined?", top_k=3)
 
     assert result["answer_packet"]["locations"] == []
+    assert result["final_answer"]["status"] == "not_enough_information"
+    assert result["final_answer"]["citations"] == []
+    assert result["final_answer"]["model_used"] == "none"
     assert result["answer_packet"]["qualification"]["support_state"] == "no_qualified_evidence"
     assert result["answer_packet"]["rejected_locations"]
     assert "unsupported_refusal_threshold" in result["answer_packet"]["rejected_locations"][0]["qualification"]["reject_reasons"]
+
+
+def test_nlp_resolver_does_not_invent_citations_or_use_rejected_locations(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text(
+        "AWRAG citation ownership is controlled by the evidence packet.\n\n"
+        "Rejected text mentions Mars database policy but should not answer unsupported policy questions.",
+        encoding="utf-8",
+    )
+    intake(tmp_path / "runtime", "reviewer_docs", source)
+
+    result = query(tmp_path / "runtime", "reviewer_docs", "What controls citation ownership evidence packet?", top_k=1)
+    location_citations = [row["citation"] for row in result["answer_packet"]["locations"]]
+
+    assert result["final_answer"]["citations"] == location_citations
+    assert all(citation in result["final_answer"]["text"] for citation in location_citations)
+    assert "[CIT" not in result["final_answer"]["text"]
+    assert "[AWCIT-" in result["final_answer"]["text"]
 

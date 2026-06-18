@@ -2,10 +2,9 @@
 
 Copyright (c) 2026 Lee Mercey. Owner: Cortex Evolved Systems. All rights reserved.
 
-## Declaration #1: This Demo Does Not Render Final Natural-Language Answers
+## Declaration #1: This Demo Uses Deterministic NLP, Not LLM Reasoning
 
-This reviewer demo does not claim to be the final AnchorWorks speech/rendering
-layer.
+This reviewer demo does not use an LLM as the final answer authority.
 
 AnchorWorks currently demonstrates the evidence engine:
 
@@ -17,20 +16,21 @@ AnchorWorks currently demonstrates the evidence engine:
 - citation/provenance receipts
 - strict data boundaries
 - optional model/no-model adapter boundary
+- deterministic NLP wording from locked evidence packets
 
-The demo output should be read as an evidence/coordinate packet, not as the
-final human-facing answer product.
+The demo output includes both an evidence/coordinate packet and a small
+deterministic NLP answer resolved from that locked packet.
 
 AnchorWorks does not "know" in the human conversational sense. It knows what
 was provided, where it is located, how it connects, and whether evidence exists
 inside the admitted dataset.
 
-The missing production layer is the language bridge:
+The current language bridge is intentionally narrow:
 
 ```text
 AW evidence/coordinate packet
--> deterministic NLP question/answer shaping
--> final human-readable speech output
+-> deterministic NLP resolver
+-> cited readable answer
 ```
 
 We are intentionally not using an LLM as the reasoning authority for this layer.
@@ -41,17 +41,14 @@ The intended architecture is:
 
 ```text
 AW finds and proves.
-NLP fills the language gap.
+NLP resolves speech from AW-provided locations.
 LLM, if used, only words a locked packet.
 ```
 
-Until the proper NLP-connected speech renderer is attached, reviewers should
-evaluate this demo on whether data stays dataset-local, whether evidence is
-found, whether source coordinates are correct, whether citations/receipts are
-produced, whether unsupported answers are refused, and whether the system avoids
-absorbing reviewer data into persistent memory.
-
-Final natural-language rendering is intentionally out of scope for this package.
+Reviewers should evaluate this demo on whether data stays dataset-local, whether
+evidence is found, whether source coordinates are correct, whether
+citations/receipts are produced, whether unsupported answers are refused, and
+whether the deterministic NLP resolver preserves AW-owned citations.
 
 ## Declaration #2: This Is Beyond POC, And The Demo Surface Is Now Frozen
 
@@ -140,7 +137,8 @@ local data
 -> native binary dataset-local counts
 -> coordinates
 -> AWRAG citations
--> cited answer packet
+-> evidence packet
+-> deterministic NLP answer
 ```
 
 ## License Posture
@@ -162,6 +160,8 @@ No persistent/user memory is written by this package.
 No model is allowed to search.
 Citations are created by AWRAG from local coordinates.
 The public demo count backend is native fixed-width binary, not SQLite.
+Final answer text is resolved by deterministic NLP from locked AWRAG locations,
+not by LLM reasoning.
 ```
 
 Architecture-significant changes are logged in `WORK_LEDGER.md`. Backend,

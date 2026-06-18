@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from .nlp_resolver import resolve_answer
+
 
 COPYRIGHT = "Copyright (c) 2026 Lee Mercey. Owner: Cortex Evolved Systems. All rights reserved."
 WATERMARK = "AWRAG public-review facsimile output; not source evidence. Verify against cited source coordinates."
@@ -198,6 +200,16 @@ def query(runtime_root: str | Path, dataset_id: str, question: str, *, top_k: in
     raw_candidate_blocks = score_blocks(paths, blocks, block_anchor_rows, q_counter, relation_neighbors, top_k=max(top_k * 5, 25))
     qualified = qualify_evidence(question, Counter(anchorize(question)), raw_candidate_blocks, top_k=top_k)
 
+    answer_packet = {
+        "instruction": "Use cited local evidence coordinates only. This packet is a facsimile output, not source evidence.",
+        "citations_owned_by": "AWRAG",
+        "qualification": qualified["summary"],
+        "qualification_receipts": qualified["receipts"],
+        "locations": qualified["locations"],
+        "rejected_locations": qualified["rejected"],
+    }
+    final_answer = resolve_answer(question, answer_packet)
+
     output = {
         "schema": "awrag_query_result@1",
         "created_at": utc_now(),
@@ -210,14 +222,8 @@ def query(runtime_root: str | Path, dataset_id: str, question: str, *, top_k: in
         "model_used": "none",
         "model_may_search": False,
         "persistent_memory": False,
-        "answer_packet": {
-            "instruction": "Use cited local evidence coordinates only. This packet is a facsimile output, not source evidence.",
-            "citations_owned_by": "AWRAG",
-            "qualification": qualified["summary"],
-            "qualification_receipts": qualified["receipts"],
-            "locations": qualified["locations"],
-            "rejected_locations": qualified["rejected"],
-        },
+        "answer_packet": answer_packet,
+        "final_answer": final_answer,
     }
     output_path = paths.outputs / f"query_{unique_stamp()}_{sha1_text(question)[:8]}.json"
     write_json(output_path, output)

@@ -102,6 +102,28 @@ counts
 data scope
 ```
 
+## NLP Resolver Rule
+
+The public demo may produce a readable final answer only through:
+
+```text
+awrag_deterministic_nlp_resolver@1
+```
+
+The resolver receives only the locked AWRAG answer packet. It must not:
+
+```text
+search
+score candidates
+read count files
+read source files
+create citations
+rewrite citation IDs
+call a language model
+```
+
+It may only select and lightly shape text already admitted by AWRAG locations.
+
 ## Citation Rule
 
 AWRAG owns citations.

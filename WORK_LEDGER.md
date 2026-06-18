@@ -178,3 +178,62 @@ honesty statement
 
 No backend, storage, model, symbol, count, citation, data-scope, or persistence
 change may be treated as a private implementation detail.
+
+## 2026-06-18 - Deterministic NLP Answer Resolver
+
+### Operator Direction
+
+Final answer output needs NLP, not LLM reasoning. AW owns evidence, citations,
+coordinates, counts, and refusal. The language layer may only make admitted
+locations readable.
+
+### Change
+
+Added:
+
+```text
+src/awrag/nlp_resolver.py
+resolver: awrag_deterministic_nlp_resolver@1
+```
+
+The query output now includes:
+
+```text
+answer_packet
+final_answer
+```
+
+The resolver receives only `answer_packet.locations`, picks readable
+question-relevant sentences from those locations, and appends the AWRAG-owned
+citation marker already present on the location.
+
+### Guardrails
+
+The resolver must not:
+
+```text
+search
+read counts
+read source files
+create citations
+rewrite citations
+call an LLM
+```
+
+Unsupported packets return:
+
+```text
+status: not_enough_information
+```
+
+### Tests Added
+
+Tests now verify:
+
+```text
+final_answer uses awrag_deterministic_nlp_resolver@1
+model_used remains none
+model_may_search remains false
+citations come from answer_packet.locations
+unsupported packets remain not_enough_information
+```
