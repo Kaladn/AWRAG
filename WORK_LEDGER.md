@@ -237,3 +237,41 @@ model_may_search remains false
 citations come from answer_packet.locations
 unsupported packets remain not_enough_information
 ```
+
+## 2026-06-18 - Package Cleanup And Symbol Collision Guard
+
+### Operator Direction
+
+Before handoff, the reviewer package must be clean and generic:
+
+```text
+no bytecode caches
+clear test instructions
+public six-byte symbol collision guard
+no dataset-specific code names
+```
+
+### Change
+
+Added a dataset-local public symbol collision guard before binary count files
+are written. If two different anchors map to the same six-byte public demo
+symbol, intake fails instead of writing ambiguous counts.
+
+Added explicit test instructions for:
+
+```text
+python -m pip install -e .
+python -m pytest tests -q
+```
+
+and direct unpacked-package testing with:
+
+```text
+PYTHONPATH=src
+```
+
+### Tests Added
+
+```text
+test_intake_fails_on_public_symbol_collision
+```

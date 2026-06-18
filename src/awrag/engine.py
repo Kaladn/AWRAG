@@ -156,6 +156,7 @@ def intake(runtime_root: str | Path, dataset_id: str, source: str | Path, *, own
                     if 0 <= neighbor_index < len(anchors):
                         relation_observations[(anchor, anchors[neighbor_index], offset)] += 1
 
+    assert_no_symbol_collisions(anchor_observations)
     write_binary_counts(paths, anchor_observations, relation_observations, block_anchor_rows)
     write_blocks_jsonl(paths, block_rows)
     write_lexicon(paths, anchor_observations)
@@ -399,6 +400,19 @@ def symbol_bytes(anchor: str) -> bytes:
 
 def symbol_hex(raw: bytes) -> str:
     return "0x" + raw.hex().upper()
+
+
+def assert_no_symbol_collisions(anchors: Counter[str]) -> None:
+    seen: dict[str, str] = {}
+    for anchor in sorted(anchors):
+        symbol = symbol_for(anchor)
+        existing = seen.get(symbol)
+        if existing is not None and existing != anchor:
+            raise ValueError(
+                "symbol collision in dataset-local public namespace: "
+                f"{existing!r} and {anchor!r} both map to {symbol}"
+            )
+        seen[symbol] = anchor
 
 
 def top_relation_neighbors(paths: DatasetPaths, q_counter: Counter[str], *, limit: int) -> list[dict[str, Any]]:

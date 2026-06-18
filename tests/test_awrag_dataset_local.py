@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import awrag.engine as engine
 from awrag.engine import intake, query, status, symbol_for
 
 DATASET_ID = "dataset_under_test"
@@ -81,6 +82,20 @@ def test_public_symbols_are_fixed_six_byte_dataset_local_ids() -> None:
     assert symbol.startswith("0x")
     assert len(symbol) == 14
     int(symbol[2:], 16)
+
+
+def test_intake_fails_on_public_symbol_collision(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("alpha beta", encoding="utf-8")
+
+    monkeypatch.setattr(engine, "symbol_for", lambda _anchor: "0x000000000001")
+
+    try:
+        intake(tmp_path / "runtime", DATASET_ID, source)
+    except ValueError as exc:
+        assert "symbol collision" in str(exc)
+    else:
+        raise AssertionError("intake should fail when two anchors share one public symbol")
 
 
 def test_query_returns_awrag_owned_citations(tmp_path: Path) -> None:

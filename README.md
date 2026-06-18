@@ -174,6 +174,22 @@ governed by `ARCHITECTURE_GUARDRAILS.md`.
 python -m pip install -e .
 ```
 
+## Test
+
+Run tests after installing the package:
+
+```powershell
+python -m pip install -e .
+python -m pytest tests -q
+```
+
+Or run directly from an unpacked folder without installing:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m pytest tests -q
+```
+
 ## Quick Start
 
 ```powershell

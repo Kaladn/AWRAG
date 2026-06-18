@@ -15,4 +15,6 @@ All rights reserved.
 10. Choose a local runtime folder outside the code package.
 11. Use your own local incoming data only if you are authorized to test it.
 12. See WORK_LEDGER.md and ARCHITECTURE_GUARDRAILS.md before reviewing internals.
-13. No commercial reuse, redistribution, scraping, training, or derivative products without written permission.
+13. To run tests cold from the package root, use: $env:PYTHONPATH="src"; python -m pytest tests -q
+14. Or install locally first with: python -m pip install -e .
+15. No commercial reuse, redistribution, scraping, training, or derivative products without written permission.
