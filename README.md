@@ -53,6 +53,44 @@ absorbing reviewer data into persistent memory.
 
 Final natural-language rendering is intentionally out of scope for this package.
 
+## Declaration #2: This Is Beyond POC, And The Demo Surface Is Now Frozen
+
+This package is not a toy proof of concept. It is a small, inspectable
+implementation of the AnchorWorks evidence contract:
+
+```text
+admitted data
+-> dataset-local lexical values
+-> dataset-local relational counts
+-> source coordinates
+-> AWRAG-owned citations
+-> qualification receipts
+-> evidence/coordinate packet
+```
+
+The local demo size is a review constraint, not an architecture limit. The same
+contract can be applied to larger admitted corpora, file stores, document
+systems, databases, or prebuilt indexes when a connector exposes stable records,
+chunks, rows, or coordinates.
+
+After the evidence qualifier addition, this reviewer demo enters
+stabilization-only mode. No new worker, dataset-specific adapter, renderer,
+model behavior, or feature lane should be added to this demo package unless it
+protects an existing contract, fixes a verified bug, improves tests, or clarifies
+reviewer documentation.
+
+The intended next work is tightening:
+
+```text
+contracts
+tests
+receipts
+failure reports
+reviewer instructions
+```
+
+not expanding the demo into a swamp of one-off modules.
+
 AWRAG is a small public-review/demo slice of AnchorWorks focused on local,
 dataset-scoped retrieval:
 

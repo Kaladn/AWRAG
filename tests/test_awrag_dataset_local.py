@@ -184,3 +184,38 @@ def test_acronym_surfaces_are_casefolded_anchors_not_letter_streams(tmp_path: Pa
     assert "l" not in top["matched_anchors"]
     assert "m" not in top["matched_anchors"]
 
+
+def test_evidence_qualifier_demotes_broad_heading_for_content(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text(
+        "## Next Steps\n\n"
+        "The next production step is to attach the evidence qualifier before final citation packet selection.",
+        encoding="utf-8",
+    )
+    intake(tmp_path / "runtime", "reviewer_docs", source)
+
+    result = query(tmp_path / "runtime", "reviewer_docs", "What are the next production steps?", top_k=2)
+    locations = result["answer_packet"]["locations"]
+
+    assert locations
+    assert "evidence qualifier" in locations[0]["text"]
+    assert result["answer_packet"]["qualification"]["qualified_count"] >= 1
+    rejected_text = "\n".join(row["text"] for row in result["answer_packet"]["rejected_locations"])
+    assert "## Next Steps" in rejected_text
+
+
+def test_evidence_qualifier_refuses_unsupported_low_coverage_query(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text(
+        "Compliance policy updates are documented for local datasets.",
+        encoding="utf-8",
+    )
+    intake(tmp_path / "runtime", "reviewer_docs", source)
+
+    result = query(tmp_path / "runtime", "reviewer_docs", "Where is the Mars database compliance policy defined?", top_k=3)
+
+    assert result["answer_packet"]["locations"] == []
+    assert result["answer_packet"]["qualification"]["support_state"] == "no_qualified_evidence"
+    assert result["answer_packet"]["rejected_locations"]
+    assert "unsupported_refusal_threshold" in result["answer_packet"]["rejected_locations"][0]["qualification"]["reject_reasons"]
+
