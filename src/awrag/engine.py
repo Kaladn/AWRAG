@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import sqlite3
+import struct
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -20,55 +20,17 @@ MAX_BLOCK_LINES = 40
 SYMBOL_SYSTEM = "awrag_public_6b@1"
 SYMBOL_BYTES = 6
 SYMBOL_HEX_CHARS = SYMBOL_BYTES * 2
+COUNT_BACKEND = "awrag_native_binary_counts@1"
+ANCHOR_RECORD = struct.Struct(">6sQ")
+RELATION_RECORD = struct.Struct(">6s6shI")
+BLOCK_ANCHOR_RECORD = struct.Struct(">6sIH")
 STOP_ANCHORS = {
-    "a",
-    "about",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "can",
-    "do",
-    "does",
-    "doc",
-    "docs",
-    "document",
-    "documents",
-    "explain",
-    "explained",
-    "explains",
-    "file",
-    "files",
-    "for",
-    "from",
-    "how",
-    "in",
-    "into",
-    "is",
-    "it",
-    "of",
-    "on",
-    "or",
-    "project",
-    "say",
-    "said",
-    "says",
-    "mention",
-    "mentioned",
-    "mentions",
-    "that",
-    "the",
-    "this",
-    "to",
-    "what",
-    "where",
-    "which",
-    "who",
-    "why",
-    "with",
+    "a", "about", "an", "and", "are", "as", "at", "be", "by", "can", "do",
+    "does", "doc", "docs", "document", "documents", "explain", "explained",
+    "explains", "file", "files", "for", "from", "how", "in", "into", "is",
+    "it", "of", "on", "or", "project", "say", "said", "says", "mention",
+    "mentioned", "mentions", "that", "the", "this", "to", "what", "where",
+    "which", "who", "why", "with",
 }
 
 
@@ -82,7 +44,10 @@ class DatasetPaths:
     citations: Path
     outputs: Path
     receipts: Path
-    sqlite_path: Path
+    anchor_counts_path: Path
+    relation_counts_path: Path
+    block_anchor_path: Path
+    blocks_path: Path
     lexicon_path: Path
     manifest_path: Path
 
@@ -105,7 +70,10 @@ def dataset_paths(runtime_root: str | Path, dataset_id: str) -> DatasetPaths:
         citations=root / "citations",
         outputs=root / "outputs",
         receipts=root / "receipts",
-        sqlite_path=root / "counts" / "dataset_counts.sqlite",
+        anchor_counts_path=root / "counts" / "anchor_counts.awbin",
+        relation_counts_path=root / "counts" / "relation_counts.awbin",
+        block_anchor_path=root / "counts" / "block_anchor_postings.awbin",
+        blocks_path=root / "state" / "blocks.jsonl",
         lexicon_path=root / "state" / "dataset_lexicon.json",
         manifest_path=root / "dataset_manifest.json",
     )
@@ -128,6 +96,7 @@ def ensure_dataset(runtime_root: str | Path, dataset_id: str, *, owner: str = "o
             "delete_with_dataset": True,
             "counts_are_memory": False,
             "counts_belong_to": "dataset",
+            "count_backend": COUNT_BACKEND,
             "symbol_system": SYMBOL_SYSTEM,
             "symbol_bytes": SYMBOL_BYTES,
             "symbol_scope": "dataset_local_demo_only",
@@ -135,20 +104,8 @@ def ensure_dataset(runtime_root: str | Path, dataset_id: str, *, owner: str = "o
             "anchorworks_lifetime_symbol_compatible": False,
         })
     if not paths.lexicon_path.exists():
-        write_json(paths.lexicon_path, {
-            "schema": "awrag_dataset_lexicon@1",
-            "dataset_id": safe_id(dataset_id),
-            "scope": "dataset_local",
-            "symbol_system": SYMBOL_SYSTEM,
-            "symbol_bytes": SYMBOL_BYTES,
-            "symbol_scope": "dataset_local_demo_only",
-            "symbol_transferable": False,
-            "anchorworks_lifetime_symbol_compatible": False,
-            "anchor_count": 0,
-            "anchors": [],
-        })
-    with connect(paths.sqlite_path) as db:
-        init_db(db)
+        write_lexicon(paths, Counter())
+    touch_binary_files(paths)
     return status(runtime_root, dataset_id)
 
 
@@ -161,60 +118,47 @@ def intake(runtime_root: str | Path, dataset_id: str, source: str | Path, *, own
         raise FileNotFoundError(source_path)
 
     anchor_observations: Counter[str] = Counter()
-    relation_observations = 0
-    block_count = 0
-    citation_count = 0
+    relation_observations: Counter[tuple[str, str, int]] = Counter()
+    block_anchor_rows: list[tuple[str, int, int]] = []
+    block_rows: list[dict[str, Any]] = []
     source_receipts: list[dict[str, Any]] = []
 
-    with connect(paths.sqlite_path) as db:
-        init_db(db)
-        for file_path in files:
-            file_digest = sha1_text(str(file_path))
-            text = file_path.read_text(encoding="utf-8", errors="replace")
-            blocks = split_blocks(text)
-            source_receipts.append({"path": str(file_path), "block_count": len(blocks)})
-            for block_index, block in enumerate(blocks, start=1):
-                block_id = f"{file_digest}:{block_index}"
-                anchors = anchorize(block["text"])
-                block_count += 1
-                citation_id = f"AWCIT-{sha1_text(block_id)[:10]}"
-                citation_count += 1
-                db.execute(
-                    "insert or replace into blocks(block_id, file_path, line_start, line_end, text, citation_id) values(?,?,?,?,?,?)",
-                    (block_id, str(file_path), block["line_start"], block["line_end"], block["text"], citation_id),
-                )
-                db.execute(
-                    "insert or replace into citations(citation_id, block_id, marker, file_path, line_start, line_end, text_hash) values(?,?,?,?,?,?,?)",
-                    (citation_id, block_id, f"[{citation_id}]", str(file_path), block["line_start"], block["line_end"], sha1_text(block["text"])),
-                )
-                for position, anchor in enumerate(anchors):
-                    symbol = symbol_for(anchor)
-                    anchor_observations[anchor] += 1
-                    db.execute(
-                        "insert into block_anchors(block_id, anchor, position) values(?,?,?)",
-                        (block_id, anchor, position),
-                    )
-                    db.execute(
-                        "insert into anchors(anchor, symbol, observations) values(?,?,1) "
-                        "on conflict(anchor) do update set observations=observations+1",
-                        (anchor, symbol),
-                    )
-                    for offset in range(-window, window + 1):
-                        if offset == 0:
-                            continue
-                        neighbor_index = position + offset
-                        if 0 <= neighbor_index < len(anchors):
-                            neighbor = anchors[neighbor_index]
-                            relation_observations += 1
-                            db.execute(
-                                "insert into relations(anchor, neighbor, offset, observations) values(?,?,?,1) "
-                                "on conflict(anchor, neighbor, offset) do update set observations=observations+1",
-                                (anchor, neighbor, offset),
-                            )
-        db.commit()
-        write_lexicon(paths, db)
-        write_citation_jsonl(paths, db)
-        write_coordinate_index(paths, db)
+    for file_path in files:
+        file_digest = sha1_text(str(file_path))
+        text = file_path.read_text(encoding="utf-8", errors="replace")
+        blocks = split_blocks(text)
+        source_receipts.append({"path": str(file_path), "block_count": len(blocks)})
+        for block_index, block in enumerate(blocks, start=1):
+            block_ordinal = len(block_rows)
+            block_id = f"{file_digest}:{block_index}"
+            anchors = anchorize(block["text"])
+            citation_id = f"AWCIT-{sha1_text(block_id)[:10]}"
+            block_rows.append({
+                "block_ordinal": block_ordinal,
+                "block_id": block_id,
+                "file_path": str(file_path),
+                "line_start": block["line_start"],
+                "line_end": block["line_end"],
+                "text": block["text"],
+                "citation_id": citation_id,
+                "marker": f"[{citation_id}]",
+                "text_hash": sha1_text(block["text"]),
+            })
+            for position, anchor in enumerate(anchors):
+                anchor_observations[anchor] += 1
+                block_anchor_rows.append((anchor, block_ordinal, position))
+                for offset in range(-window, window + 1):
+                    if offset == 0:
+                        continue
+                    neighbor_index = position + offset
+                    if 0 <= neighbor_index < len(anchors):
+                        relation_observations[(anchor, anchors[neighbor_index], offset)] += 1
+
+    write_binary_counts(paths, anchor_observations, relation_observations, block_anchor_rows)
+    write_blocks_jsonl(paths, block_rows)
+    write_lexicon(paths, anchor_observations)
+    write_citation_jsonl(paths, block_rows)
+    write_coordinate_index(paths, block_rows)
 
     receipt = {
         "schema": "awrag_intake_receipt@1",
@@ -223,11 +167,12 @@ def intake(runtime_root: str | Path, dataset_id: str, source: str | Path, *, own
         "scope": "dataset_local",
         "source": str(source_path),
         "source_file_count": len(files),
-        "block_count": block_count,
-        "citation_count": citation_count,
+        "block_count": len(block_rows),
+        "citation_count": len(block_rows),
         "unique_anchor_count": len(anchor_observations),
         "anchor_observation_count": sum(anchor_observations.values()),
-        "relation_observation_count": relation_observations,
+        "relation_observation_count": sum(relation_observations.values()),
+        "count_backend": COUNT_BACKEND,
         "persistent_memory": False,
         "promotion_allowed": False,
         "sources": source_receipts,
@@ -247,11 +192,11 @@ def query(runtime_root: str | Path, dataset_id: str, question: str, *, top_k: in
         raise ValueError("question produced no anchors")
     q_counter = Counter(q_anchors)
 
-    with connect(paths.sqlite_path) as db:
-        init_db(db)
-        relation_neighbors = top_relation_neighbors(db, q_counter, limit=16)
-        raw_candidate_blocks = score_blocks(db, q_counter, relation_neighbors, top_k=max(top_k * 5, 25))
-        qualified = qualify_evidence(question, Counter(anchorize(question)), raw_candidate_blocks, top_k=top_k)
+    blocks = read_blocks(paths)
+    block_anchor_rows = read_block_anchor_rows(paths)
+    relation_neighbors = top_relation_neighbors(paths, q_counter, limit=16)
+    raw_candidate_blocks = score_blocks(paths, blocks, block_anchor_rows, q_counter, relation_neighbors, top_k=max(top_k * 5, 25))
+    qualified = qualify_evidence(question, Counter(anchorize(question)), raw_candidate_blocks, top_k=top_k)
 
     output = {
         "schema": "awrag_query_result@1",
@@ -261,6 +206,7 @@ def query(runtime_root: str | Path, dataset_id: str, question: str, *, top_k: in
         "question": question,
         "question_anchors": list(q_counter),
         "relation_neighbors": relation_neighbors,
+        "count_backend": COUNT_BACKEND,
         "model_used": "none",
         "model_may_search": False,
         "persistent_memory": False,
@@ -281,46 +227,76 @@ def query(runtime_root: str | Path, dataset_id: str, question: str, *, top_k: in
 
 def status(runtime_root: str | Path, dataset_id: str) -> dict[str, Any]:
     paths = dataset_paths(runtime_root, dataset_id)
-    with connect(paths.sqlite_path) as db:
-        init_db(db)
-        anchors = scalar(db, "select count(*) from anchors")
-        relations = scalar(db, "select count(*) from relations")
-        blocks = scalar(db, "select count(*) from blocks")
-        citations = scalar(db, "select count(*) from citations")
+    touch_binary_files(paths)
     return with_protected_notice({
         "schema": "awrag_dataset_status@1",
         "dataset_id": safe_id(dataset_id),
         "scope": "dataset_local",
         "dataset_root": str(paths.root),
-        "sqlite_counts_path": str(paths.sqlite_path),
+        "count_backend": COUNT_BACKEND,
+        "anchor_counts_path": str(paths.anchor_counts_path),
+        "relation_counts_path": str(paths.relation_counts_path),
+        "block_anchor_postings_path": str(paths.block_anchor_path),
         "dataset_lexicon_path": str(paths.lexicon_path),
-        "anchor_count": anchors,
-        "relation_count": relations,
-        "block_count": blocks,
-        "citation_count": citations,
+        "anchor_count": record_count(paths.anchor_counts_path, ANCHOR_RECORD.size),
+        "relation_count": record_count(paths.relation_counts_path, RELATION_RECORD.size),
+        "block_anchor_posting_count": record_count(paths.block_anchor_path, BLOCK_ANCHOR_RECORD.size),
+        "block_count": jsonl_count(paths.blocks_path),
+        "citation_count": jsonl_count(paths.citations / "citations.jsonl"),
         "persistent_memory": False,
     })
 
 
-def connect(path: Path) -> sqlite3.Connection:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path)
-    db.row_factory = sqlite3.Row
-    return db
+def touch_binary_files(paths: DatasetPaths) -> None:
+    paths.counts.mkdir(parents=True, exist_ok=True)
+    for path in (paths.anchor_counts_path, paths.relation_counts_path, paths.block_anchor_path):
+        path.touch(exist_ok=True)
+    paths.blocks_path.parent.mkdir(parents=True, exist_ok=True)
+    paths.blocks_path.touch(exist_ok=True)
 
 
-def init_db(db: sqlite3.Connection) -> None:
-    db.executescript(
-        """
-        create table if not exists anchors(anchor text primary key, symbol text not null, observations integer not null);
-        create table if not exists relations(anchor text not null, neighbor text not null, offset integer not null, observations integer not null, primary key(anchor, neighbor, offset));
-        create table if not exists blocks(block_id text primary key, file_path text not null, line_start integer not null, line_end integer not null, text text not null, citation_id text not null);
-        create table if not exists block_anchors(block_id text not null, anchor text not null, position integer not null);
-        create table if not exists citations(citation_id text primary key, block_id text not null, marker text not null, file_path text not null, line_start integer not null, line_end integer not null, text_hash text not null);
-        create index if not exists idx_block_anchors_anchor on block_anchors(anchor);
-        create index if not exists idx_relations_anchor on relations(anchor);
-        """
-    )
+def write_binary_counts(
+    paths: DatasetPaths,
+    anchors: Counter[str],
+    relations: Counter[tuple[str, str, int]],
+    block_anchors: list[tuple[str, int, int]],
+) -> None:
+    paths.counts.mkdir(parents=True, exist_ok=True)
+    with paths.anchor_counts_path.open("wb") as handle:
+        for anchor, observations in sorted(anchors.items()):
+            handle.write(ANCHOR_RECORD.pack(symbol_bytes(anchor), int(observations)))
+    with paths.relation_counts_path.open("wb") as handle:
+        for (anchor, neighbor, offset), observations in sorted(relations.items()):
+            handle.write(RELATION_RECORD.pack(symbol_bytes(anchor), symbol_bytes(neighbor), int(offset), int(observations)))
+    with paths.block_anchor_path.open("wb") as handle:
+        for anchor, block_ordinal, position in sorted(block_anchors, key=lambda item: (symbol_for(item[0]), item[1], item[2])):
+            handle.write(BLOCK_ANCHOR_RECORD.pack(symbol_bytes(anchor), int(block_ordinal), int(position)))
+
+
+def iter_anchor_records(paths: DatasetPaths) -> Iterable[tuple[bytes, int]]:
+    with paths.anchor_counts_path.open("rb") as handle:
+        while chunk := handle.read(ANCHOR_RECORD.size):
+            if len(chunk) == ANCHOR_RECORD.size:
+                symbol, observations = ANCHOR_RECORD.unpack(chunk)
+                yield symbol, int(observations)
+
+
+def iter_relation_records(paths: DatasetPaths) -> Iterable[tuple[bytes, bytes, int, int]]:
+    with paths.relation_counts_path.open("rb") as handle:
+        while chunk := handle.read(RELATION_RECORD.size):
+            if len(chunk) == RELATION_RECORD.size:
+                anchor, neighbor, offset, observations = RELATION_RECORD.unpack(chunk)
+                yield anchor, neighbor, int(offset), int(observations)
+
+
+def read_block_anchor_rows(paths: DatasetPaths) -> list[tuple[bytes, int, int]]:
+    rows: list[tuple[bytes, int, int]] = []
+    with paths.block_anchor_path.open("rb") as handle:
+        while chunk := handle.read(BLOCK_ANCHOR_RECORD.size):
+            if len(chunk) == BLOCK_ANCHOR_RECORD.size:
+                symbol, block_ordinal, position = BLOCK_ANCHOR_RECORD.unpack(chunk)
+                rows.append((symbol, int(block_ordinal), int(position)))
+    return rows
 
 
 def iter_files(path: Path) -> Iterable[Path]:
@@ -411,59 +387,82 @@ def symbol_for(anchor: str) -> str:
     return "0x" + sha1_text(anchor)[:SYMBOL_HEX_CHARS].upper()
 
 
-def top_relation_neighbors(db: sqlite3.Connection, q_counter: Counter[str], *, limit: int) -> list[dict[str, Any]]:
-    scores: Counter[str] = Counter()
-    blocked = set(q_counter) | STOP_ANCHORS
-    for anchor, weight in q_counter.items():
-        for row in db.execute("select neighbor, sum(observations) as observations from relations where anchor=? group by neighbor", (anchor,)):
-            neighbor = str(row["neighbor"])
-            if neighbor in blocked:
-                continue
-            scores[neighbor] += int(row["observations"]) * weight
-    return [{"anchor": anchor, "score": score} for anchor, score in scores.most_common(limit)]
+def symbol_bytes(anchor: str) -> bytes:
+    return bytes.fromhex(symbol_for(anchor)[2:])
 
 
-def score_blocks(db: sqlite3.Connection, q_counter: Counter[str], relation_neighbors: list[dict[str, Any]], *, top_k: int) -> list[dict[str, Any]]:
-    weights = Counter()
-    direct_anchors = set(q_counter)
+def symbol_hex(raw: bytes) -> str:
+    return "0x" + raw.hex().upper()
+
+
+def top_relation_neighbors(paths: DatasetPaths, q_counter: Counter[str], *, limit: int) -> list[dict[str, Any]]:
+    scores: Counter[bytes] = Counter()
+    blocked_symbols = {symbol_bytes(anchor) for anchor in q_counter} | {symbol_bytes(anchor) for anchor in STOP_ANCHORS}
+    query_symbols = {symbol_bytes(anchor): weight for anchor, weight in q_counter.items()}
+    symbol_to_anchor = read_symbol_to_anchor(paths)
+    for anchor_symbol, neighbor_symbol, _offset, observations in iter_relation_records(paths):
+        weight = query_symbols.get(anchor_symbol)
+        if not weight or neighbor_symbol in blocked_symbols:
+            continue
+        scores[neighbor_symbol] += observations * weight
+    return [
+        {"anchor": symbol_to_anchor.get(symbol_hex(symbol), symbol_hex(symbol)), "symbol": symbol_hex(symbol), "score": score}
+        for symbol, score in scores.most_common(limit)
+    ]
+
+
+def score_blocks(
+    paths: DatasetPaths,
+    blocks: dict[int, dict[str, Any]],
+    block_anchor_rows: list[tuple[bytes, int, int]],
+    q_counter: Counter[str],
+    relation_neighbors: list[dict[str, Any]],
+    *,
+    top_k: int,
+) -> list[dict[str, Any]]:
+    weights: Counter[bytes] = Counter()
+    direct_symbols = {symbol_bytes(anchor) for anchor in q_counter}
+    symbol_to_anchor = read_symbol_to_anchor(paths)
     for anchor, count in q_counter.items():
-        weights[anchor] += 80 * count
+        weights[symbol_bytes(anchor)] += 80 * count
     for index, row in enumerate(relation_neighbors):
-        weights[str(row["anchor"])] += max(1, 4 - index // 4)
-    block_scores: Counter[str] = Counter()
-    hits: dict[str, set[str]] = {}
-    direct_hits: Counter[str] = Counter()
-    for anchor, weight in weights.items():
-        df_row = db.execute("select count(distinct block_id) from block_anchors where anchor=?", (anchor,)).fetchone()
-        document_frequency = int(df_row[0]) if df_row else 1
+        weights[bytes.fromhex(str(row["symbol"])[2:])] += max(1, 4 - index // 4)
+
+    posting_counts: Counter[bytes] = Counter(symbol for symbol, _block, _pos in block_anchor_rows)
+    block_lengths: Counter[int] = Counter(block for _symbol, block, _pos in block_anchor_rows)
+    block_scores: Counter[int] = Counter()
+    hits: dict[int, set[bytes]] = {}
+    direct_hits: Counter[int] = Counter()
+    seen_postings: set[tuple[bytes, int]] = set()
+
+    for symbol, block_ordinal, _position in block_anchor_rows:
+        weight = weights.get(symbol)
+        if not weight:
+            continue
+        posting_key = (symbol, block_ordinal)
+        if posting_key in seen_postings:
+            continue
+        seen_postings.add(posting_key)
+        document_frequency = posting_counts[symbol]
         adjusted_weight = weight / max(1.0, document_frequency ** 0.5)
-        for row in db.execute("select distinct block_id from block_anchors where anchor=?", (anchor,)):
-            block_id = str(row["block_id"])
-            block_scores[block_id] += adjusted_weight
-            hits.setdefault(block_id, set()).add(anchor)
-            if anchor in direct_anchors:
-                direct_hits[block_id] += 1
-    out: list[dict[str, Any]] = []
-    ranked_rows: list[tuple[str, float, float, int]] = []
-    block_lengths = {
-        str(row["block_id"]): int(row["anchor_count"])
-        for row in db.execute("select block_id, count(*) as anchor_count from block_anchors group by block_id")
-    }
-    for block_id, score in block_scores.items():
-        anchor_count = block_lengths.get(block_id, 1)
+        block_scores[block_ordinal] += adjusted_weight
+        hits.setdefault(block_ordinal, set()).add(symbol)
+        if symbol in direct_symbols:
+            direct_hits[block_ordinal] += 1
+
+    ranked_rows: list[tuple[int, float, float, int]] = []
+    for block_ordinal, score in block_scores.items():
+        anchor_count = block_lengths.get(block_ordinal, 1)
         density = float(score) / max(1.0, anchor_count ** 0.5)
-        ranked_rows.append((block_id, float(score), density, anchor_count))
-    ranked = sorted(
-        ranked_rows,
-        key=lambda item: (-direct_hits[item[0]], -item[2], -item[1], item[0]),
-    )
-    for block_id, score, density, anchor_count in ranked[:top_k]:
-        block = db.execute(
-            "select b.*, c.marker from blocks b join citations c on c.block_id=b.block_id where b.block_id=?",
-            (block_id,),
-        ).fetchone()
+        ranked_rows.append((block_ordinal, float(score), density, anchor_count))
+    ranked = sorted(ranked_rows, key=lambda item: (-direct_hits[item[0]], -item[2], -item[1], item[0]))
+
+    out: list[dict[str, Any]] = []
+    for block_ordinal, score, density, anchor_count in ranked[:top_k]:
+        block = blocks.get(block_ordinal)
         if not block:
             continue
+        matched_symbols = hits.get(block_ordinal, set())
         out.append({
             "citation": str(block["marker"]),
             "file_path": str(block["file_path"]),
@@ -472,20 +471,15 @@ def score_blocks(db: sqlite3.Connection, q_counter: Counter[str], relation_neigh
             "score": round(float(score), 4),
             "density_score": round(float(density), 4),
             "block_anchor_count": anchor_count,
-            "direct_hit_count": int(direct_hits[block_id]),
-            "direct_matched_anchors": sorted(hits.get(block_id, set()) & direct_anchors),
-            "matched_anchors": sorted(hits.get(block_id, set())),
+            "direct_hit_count": int(direct_hits[block_ordinal]),
+            "direct_matched_anchors": sorted(symbol_to_anchor.get(symbol_hex(symbol), symbol_hex(symbol)) for symbol in matched_symbols & direct_symbols),
+            "matched_anchors": sorted(symbol_to_anchor.get(symbol_hex(symbol), symbol_hex(symbol)) for symbol in matched_symbols),
             "text": str(block["text"]),
         })
     return out
 
 
 def qualify_evidence(question: str, q_counter: Counter[str], candidates: list[dict[str, Any]], *, top_k: int) -> dict[str, Any]:
-    """Gate retrieval candidates before they become answer-packet evidence.
-
-    Retrieval says a block is nearby. This qualifier asks whether the block is
-    allowed to answer. It is intentionally deterministic and receipt-heavy.
-    """
     question_terms = [anchor for anchor in q_counter if anchor not in STOP_ANCHORS]
     required_terms = significant_question_terms(question_terms)
     path_intent = has_path_or_config_intent(question)
@@ -548,12 +542,7 @@ def qualify_candidate(candidate: dict[str, Any], required_terms: list[str], path
         reject_reasons.append("predicate_object_coverage_miss")
 
     qualified = not reject_reasons
-    score = (
-        float(candidate.get("density_score", 0))
-        + 8.0 * coverage
-        + min(4.0, float(candidate.get("direct_hit_count", 0)))
-        - (3.0 if heading_only else 0.0)
-    )
+    score = float(candidate.get("density_score", 0)) + 8.0 * coverage + min(4.0, float(candidate.get("direct_hit_count", 0))) - (3.0 if heading_only else 0.0)
     return {
         "schema": "awrag_candidate_qualification@1",
         "candidate": candidate.get("citation"),
@@ -626,14 +615,33 @@ def contains_true_path_or_endpoint(text: str) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
 
-def write_lexicon(paths: DatasetPaths, db: sqlite3.Connection) -> None:
-    anchors = [
+def write_blocks_jsonl(paths: DatasetPaths, blocks: list[dict[str, Any]]) -> None:
+    paths.blocks_path.parent.mkdir(parents=True, exist_ok=True)
+    with paths.blocks_path.open("w", encoding="utf-8", newline="\n") as handle:
+        for block in blocks:
+            handle.write(json.dumps(block, ensure_ascii=True) + "\n")
+
+
+def read_blocks(paths: DatasetPaths) -> dict[int, dict[str, Any]]:
+    blocks: dict[int, dict[str, Any]] = {}
+    if not paths.blocks_path.exists():
+        return blocks
+    for line in paths.blocks_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        block = json.loads(line)
+        blocks[int(block["block_ordinal"])] = block
+    return blocks
+
+
+def write_lexicon(paths: DatasetPaths, anchors: Counter[str]) -> None:
+    rows = [
         {
-            "anchor": str(row["anchor"]),
-            "symbol": str(row["symbol"]),
+            "anchor": anchor,
+            "symbol": symbol_for(anchor),
             "symbol_system": SYMBOL_SYSTEM,
             "symbol_bytes": SYMBOL_BYTES,
-            "observations": int(row["observations"]),
+            "observations": int(observations),
             "scope": "dataset_local",
             "symbol_scope": "dataset_local_demo_only",
             "transferable": False,
@@ -641,7 +649,7 @@ def write_lexicon(paths: DatasetPaths, db: sqlite3.Connection) -> None:
             "anchorworks_lifetime_symbol_compatible": False,
             "promotion_allowed": False,
         }
-        for row in db.execute("select anchor, symbol, observations from anchors order by anchor")
+        for anchor, observations in sorted(anchors.items())
     ]
     write_json(paths.lexicon_path, {
         "schema": "awrag_dataset_lexicon@1",
@@ -653,15 +661,22 @@ def write_lexicon(paths: DatasetPaths, db: sqlite3.Connection) -> None:
         "symbol_transferable": False,
         "lifetime_allowed": False,
         "anchorworks_lifetime_symbol_compatible": False,
-        "anchor_count": len(anchors),
-        "anchors": anchors,
+        "anchor_count": len(rows),
+        "anchors": rows,
     })
 
 
-def write_citation_jsonl(paths: DatasetPaths, db: sqlite3.Connection) -> None:
+def read_symbol_to_anchor(paths: DatasetPaths) -> dict[str, str]:
+    if not paths.lexicon_path.exists():
+        return {}
+    payload = json.loads(paths.lexicon_path.read_text(encoding="utf-8"))
+    return {str(row["symbol"]): str(row["anchor"]) for row in payload.get("anchors", [])}
+
+
+def write_citation_jsonl(paths: DatasetPaths, blocks: list[dict[str, Any]]) -> None:
     path = paths.citations / "citations.jsonl"
     with path.open("w", encoding="utf-8", newline="\n") as handle:
-        for row in db.execute("select * from citations order by citation_id"):
+        for row in sorted(blocks, key=lambda item: str(item["citation_id"])):
             handle.write(json.dumps(with_protected_notice({
                 "schema": "awrag_citation@1",
                 "citation_id": row["citation_id"],
@@ -674,10 +689,10 @@ def write_citation_jsonl(paths: DatasetPaths, db: sqlite3.Connection) -> None:
             }), ensure_ascii=True) + "\n")
 
 
-def write_coordinate_index(paths: DatasetPaths, db: sqlite3.Connection) -> None:
+def write_coordinate_index(paths: DatasetPaths, blocks: list[dict[str, Any]]) -> None:
     path = paths.coordinates / "coordinate_index.jsonl"
     with path.open("w", encoding="utf-8", newline="\n") as handle:
-        for row in db.execute("select block_id, file_path, line_start, line_end, citation_id from blocks order by file_path, line_start"):
+        for row in sorted(blocks, key=lambda item: (str(item["file_path"]), int(item["line_start"]))):
             handle.write(json.dumps(with_protected_notice({
                 "schema": "awrag_coordinate@1",
                 "block_id": row["block_id"],
@@ -689,15 +704,24 @@ def write_coordinate_index(paths: DatasetPaths, db: sqlite3.Connection) -> None:
             }), ensure_ascii=True) + "\n")
 
 
-def scalar(db: sqlite3.Connection, sql: str) -> int:
-    row = db.execute(sql).fetchone()
-    return int(row[0]) if row else 0
+def record_count(path: Path, record_size: int) -> int:
+    if not path.exists():
+        return 0
+    return path.stat().st_size // record_size
+
+
+def jsonl_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
 
 
 def public_paths(paths: DatasetPaths) -> dict[str, str]:
     return {
         "dataset_root": str(paths.root),
-        "counts": str(paths.sqlite_path),
+        "anchor_counts": str(paths.anchor_counts_path),
+        "relation_counts": str(paths.relation_counts_path),
+        "block_anchor_postings": str(paths.block_anchor_path),
         "lexicon": str(paths.lexicon_path),
         "coordinates": str(paths.coordinates),
         "citations": str(paths.citations),
@@ -741,4 +765,3 @@ def utc_now() -> str:
 
 def unique_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-

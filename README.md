@@ -137,7 +137,7 @@ dataset-scoped retrieval:
 ```text
 local data
 -> dataset-local lexicon
--> dataset-local counts
+-> native binary dataset-local counts
 -> coordinates
 -> AWRAG citations
 -> cited answer packet
@@ -161,7 +161,12 @@ Dataset lexical values belong to the dataset.
 No persistent/user memory is written by this package.
 No model is allowed to search.
 Citations are created by AWRAG from local coordinates.
+The public demo count backend is native fixed-width binary, not SQLite.
 ```
+
+Architecture-significant changes are logged in `WORK_LEDGER.md`. Backend,
+storage, symbol, data-scope, citation, or model-authority substitutions are
+governed by `ARCHITECTURE_GUARDRAILS.md`.
 
 ## Install
 
@@ -185,7 +190,9 @@ The dataset-local runtime is created under:
 <runtime-root>/datasets/<dataset-id>/
   dataset_manifest.json
   state/dataset_lexicon.json
-  counts/dataset_counts.sqlite
+  counts/anchor_counts.awbin
+  counts/relation_counts.awbin
+  counts/block_anchor_postings.awbin
   coordinates/coordinate_index.jsonl
   citations/citations.jsonl
   outputs/

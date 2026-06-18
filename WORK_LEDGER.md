@@ -1,0 +1,180 @@
+# AWRAG Work Ledger
+
+Copyright (c) 2026 Lee Mercey.
+Owner: Cortex Evolved Systems.
+All rights reserved.
+
+This file records architecture-significant work in plain language. It exists so
+backend substitutions, storage changes, model changes, data-scope changes, and
+contract changes cannot be hidden as implementation details.
+
+## 2026-06-18 - Native Binary Count Backend Recovery
+
+### Operator Direction
+
+The public AWRAG demo must represent the AnchorWorks-style count engine shape:
+
+```text
+local admitted data
+-> dataset-local lexicon
+-> native binary dataset-local counts
+-> source coordinates
+-> AWRAG-owned citations
+-> evidence/coordinate packet
+```
+
+The public demo may use the demo-safe symbol namespace:
+
+```text
+symbol_system: awrag_public_6b@1
+symbol_bytes: 6
+scope: dataset_local_demo_only
+```
+
+but it must not replace the count engine with SQL.
+
+### What Went Wrong
+
+Codex introduced SQLite in commit:
+
+```text
+9ca8bad Publish dataset-local AWRAG review demo
+```
+
+That commit added `src/awrag/engine.py` with:
+
+```text
+import sqlite3
+counts/dataset_counts.sqlite
+SQL tables for anchors, relations, blocks, block_anchors, and citations
+SQL query path for neighbor lookup and block scoring
+```
+
+This was wrong for AWRAG. It preserved some reviewer-facing scaffolding, but it
+did not preserve the required native binary count backend shape.
+
+### Why It Was Wrong
+
+SQLite is a general database backend. AWRAG requires a local, deterministic,
+native binary count spine for the public demo.
+
+The mistake changed the system claim from:
+
+```text
+native compact count structure
+fast deterministic relation search
+binary count behavior
+small active evidence layer
+```
+
+into:
+
+```text
+SQLite-backed indexed storage with AWRAG-shaped metadata
+```
+
+That is not the same system.
+
+### Recovery Performed
+
+SQLite was removed from `src/awrag/engine.py`.
+
+The active public demo backend is now:
+
+```text
+count_backend: awrag_native_binary_counts@1
+```
+
+Dataset-local binary count files:
+
+```text
+counts/anchor_counts.awbin
+counts/relation_counts.awbin
+counts/block_anchor_postings.awbin
+```
+
+Reviewer-readable JSON/JSONL remains only for:
+
+```text
+dataset_manifest.json
+state/dataset_lexicon.json
+state/blocks.jsonl
+coordinates/coordinate_index.jsonl
+citations/citations.jsonl
+outputs/
+receipts/
+```
+
+### Tests Added
+
+Regression test added:
+
+```text
+test_demo_uses_native_binary_counts_not_sqlite
+```
+
+The test requires:
+
+```text
+count_backend == awrag_native_binary_counts@1
+anchor_counts.awbin exists
+relation_counts.awbin exists
+block_anchor_postings.awbin exists
+dataset_counts.sqlite does not exist
+sqlite_counts_path is not present in status output
+```
+
+### Verification
+
+```text
+python -m pytest tests -q
+14 passed
+
+python -m compileall src
+passed
+
+CLI smoke:
+count_backend = awrag_native_binary_counts@1
+anchor_counts.awbin created
+relation_counts.awbin created
+block_anchor_postings.awbin created
+```
+
+### Current Honesty Statement
+
+The public AWRAG demo now uses a demo-safe native binary count backend with
+public six-byte dataset-local symbols.
+
+It is not the private AnchorWorks lifetime count spine.
+
+It must not be marketed as the private AnchorWorks symbol genome or private
+lifetime memory system.
+
+It may be described as:
+
+```text
+A public-review AWRAG slice using native fixed-width binary dataset counts and
+demo-safe six-byte dataset-local symbols.
+```
+
+## Required Logging Rule Going Forward
+
+Every future architecture-significant change must add a ledger entry before it
+is considered complete.
+
+Required fields:
+
+```text
+date
+operator direction
+files changed
+contract affected
+backend/storage affected
+data scope affected
+model authority affected
+tests run
+honesty statement
+```
+
+No backend, storage, model, symbol, count, citation, data-scope, or persistence
+change may be treated as a private implementation detail.

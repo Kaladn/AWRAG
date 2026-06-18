@@ -33,7 +33,7 @@ lifetime memory, or private symbol genome.
 - Dataset-local intake builds:
   - dataset manifest
   - dataset lexicon
-  - SQLite dataset counts
+  - native fixed-width binary dataset counts
   - coordinate index
   - citation JSONL
   - watermarked receipts and query outputs
@@ -154,3 +154,8 @@ Public AWRAG proves the dataset-local evidence contract.
 Private AnchorWorks keeps the lifetime symbol genome and memory authority.
 Do not blur those namespaces.
 ```
+
+Architecture-significant work is logged in `WORK_LEDGER.md`.
+
+Backend, storage, symbol, data-scope, citation, and model-authority substitutions
+are governed by `ARCHITECTURE_GUARDRAILS.md`.

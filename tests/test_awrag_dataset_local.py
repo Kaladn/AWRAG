@@ -28,7 +28,9 @@ def test_intake_writes_dataset_local_counts_and_lexicon(tmp_path: Path) -> None:
     dataset_root = tmp_path / "runtime" / "datasets" / "reviewer_docs"
     assert result["scope"] == "dataset_local"
     assert result["persistent_memory"] is False
-    assert (dataset_root / "counts" / "dataset_counts.sqlite").exists()
+    assert (dataset_root / "counts" / "anchor_counts.awbin").exists()
+    assert (dataset_root / "counts" / "relation_counts.awbin").exists()
+    assert (dataset_root / "counts" / "block_anchor_postings.awbin").exists()
     assert (dataset_root / "state" / "dataset_lexicon.json").exists()
     assert (dataset_root / "coordinates" / "coordinate_index.jsonl").exists()
     assert (dataset_root / "citations" / "citations.jsonl").exists()
@@ -49,8 +51,26 @@ def test_intake_writes_dataset_local_counts_and_lexicon(tmp_path: Path) -> None:
     assert_protected_notice(manifest)
     assert manifest["symbol_system"] == "awrag_public_6b@1"
     assert manifest["symbol_bytes"] == 6
+    assert manifest["count_backend"] == "awrag_native_binary_counts@1"
     assert manifest["symbol_transferable"] is False
     assert manifest["anchorworks_lifetime_symbol_compatible"] is False
+
+
+def test_demo_uses_native_binary_counts_not_sqlite(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("Native binary counts stay dataset-local.", encoding="utf-8")
+
+    result = intake(tmp_path / "runtime", "reviewer_docs", source)
+    dataset_root = tmp_path / "runtime" / "datasets" / "reviewer_docs"
+    status_result = status(tmp_path / "runtime", "reviewer_docs")
+
+    assert result["count_backend"] == "awrag_native_binary_counts@1"
+    assert status_result["count_backend"] == "awrag_native_binary_counts@1"
+    assert not (dataset_root / "counts" / "dataset_counts.sqlite").exists()
+    assert "sqlite_counts_path" not in status_result
+    assert status_result["anchor_counts_path"].endswith("anchor_counts.awbin")
+    assert status_result["relation_counts_path"].endswith("relation_counts.awbin")
+    assert status_result["block_anchor_postings_path"].endswith("block_anchor_postings.awbin")
 
 
 def test_public_symbols_are_fixed_six_byte_dataset_local_ids() -> None:
