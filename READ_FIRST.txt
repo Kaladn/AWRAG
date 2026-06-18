@@ -1,0 +1,17 @@
+AnchorWorks / AWRAG Reviewer Demo
+Copyright (c) 2026 Lee Mercey.
+Owner: Cortex Evolved Systems.
+All rights reserved.
+
+1. This package is for review/demo only under the included license.
+2. This demo proves the dataset-local evidence engine, not final speech rendering.
+3. Dataset counts are native fixed-width binary .awbin files, not SQLite.
+4. Demo symbols use awrag_public_6b@1 and are not the private AnchorWorks symbol genome.
+5. Reviewer data stays dataset-local and is not written to lifetime memory.
+6. Outputs are watermarked facsimiles, not source evidence or professional advice.
+7. AWRAG owns citations and source coordinates.
+8. The default model mode is none; no model is allowed to search.
+9. Choose a local runtime folder outside the code package.
+10. Use your own local incoming data only if you are authorized to test it.
+11. See WORK_LEDGER.md and ARCHITECTURE_GUARDRAILS.md before reviewing internals.
+12. No commercial reuse, redistribution, scraping, training, or derivative products without written permission.
