@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from awrag.engine import intake, query, status
+from awrag.engine import intake, query, status, symbol_for
 
 
 def assert_protected_notice(payload: dict) -> None:
@@ -36,10 +36,29 @@ def test_intake_writes_dataset_local_counts_and_lexicon(tmp_path: Path) -> None:
     lexicon = json.loads((dataset_root / "state" / "dataset_lexicon.json").read_text(encoding="utf-8"))
     manifest = json.loads((dataset_root / "dataset_manifest.json").read_text(encoding="utf-8"))
     assert lexicon["scope"] == "dataset_local"
+    assert lexicon["symbol_system"] == "awrag_public_6b@1"
+    assert lexicon["symbol_bytes"] == 6
+    assert lexicon["symbol_transferable"] is False
+    assert lexicon["anchorworks_lifetime_symbol_compatible"] is False
     assert lexicon["anchor_count"] > 0
+    assert lexicon["anchors"][0]["symbol_system"] == "awrag_public_6b@1"
+    assert lexicon["anchors"][0]["transferable"] is False
+    assert lexicon["anchors"][0]["lifetime_allowed"] is False
     assert_protected_notice(result)
     assert_protected_notice(lexicon)
     assert_protected_notice(manifest)
+    assert manifest["symbol_system"] == "awrag_public_6b@1"
+    assert manifest["symbol_bytes"] == 6
+    assert manifest["symbol_transferable"] is False
+    assert manifest["anchorworks_lifetime_symbol_compatible"] is False
+
+
+def test_public_symbols_are_fixed_six_byte_dataset_local_ids() -> None:
+    symbol = symbol_for("dataset")
+
+    assert symbol.startswith("0x")
+    assert len(symbol) == 14
+    int(symbol[2:], 16)
 
 
 def test_query_returns_awrag_owned_citations(tmp_path: Path) -> None:

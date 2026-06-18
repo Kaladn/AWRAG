@@ -91,6 +91,46 @@ reviewer instructions
 
 not expanding the demo into a swamp of one-off modules.
 
+## Declaration #3: Public Demo Symbols Are Not The Private Symbol Genome
+
+AWRAG public/demo symbols use a separate six-byte dataset-local namespace:
+
+```text
+symbol_system: awrag_public_6b@1
+symbol_bytes: 6
+scope: dataset_local_demo_only
+transferable: false
+lifetime_allowed: false
+anchorworks_lifetime_symbol_compatible: false
+```
+
+This demo keeps the compact-symbol pattern:
+
+```text
+anchors
+-> public/demo symbols
+-> dataset-local relation counts
+```
+
+but it does not expose, emulate, or export the private AnchorWorks/Cortex
+Evolved Systems symbol genome. Public AWRAG symbols are implementation IDs for
+one dataset-local package. They are not portable authority, not lifetime memory,
+and not compatible with private AnchorWorks symbol identity.
+
+This protects both sides:
+
+```text
+Public AWRAG:
+  demo-safe six-byte dataset symbols
+  local counts and citations
+  reviewer-inspectable behavior
+
+Private AnchorWorks:
+  protected lifetime symbol genome
+  proprietary symbol assignment
+  system-specific memory authority
+```
+
 AWRAG is a small public-review/demo slice of AnchorWorks focused on local,
 dataset-scoped retrieval:
 

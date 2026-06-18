@@ -17,6 +17,9 @@ LICENSE_REF = "AWRAG Public Review License"
 FACSIMILE_WARNING = "This output is a local processing facsimile, not source evidence or professional advice."
 WORD_RE = re.compile(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?|[^\sA-Za-z0-9]", re.UNICODE)
 MAX_BLOCK_LINES = 40
+SYMBOL_SYSTEM = "awrag_public_6b@1"
+SYMBOL_BYTES = 6
+SYMBOL_HEX_CHARS = SYMBOL_BYTES * 2
 STOP_ANCHORS = {
     "a",
     "about",
@@ -125,12 +128,22 @@ def ensure_dataset(runtime_root: str | Path, dataset_id: str, *, owner: str = "o
             "delete_with_dataset": True,
             "counts_are_memory": False,
             "counts_belong_to": "dataset",
+            "symbol_system": SYMBOL_SYSTEM,
+            "symbol_bytes": SYMBOL_BYTES,
+            "symbol_scope": "dataset_local_demo_only",
+            "symbol_transferable": False,
+            "anchorworks_lifetime_symbol_compatible": False,
         })
     if not paths.lexicon_path.exists():
         write_json(paths.lexicon_path, {
             "schema": "awrag_dataset_lexicon@1",
             "dataset_id": safe_id(dataset_id),
             "scope": "dataset_local",
+            "symbol_system": SYMBOL_SYSTEM,
+            "symbol_bytes": SYMBOL_BYTES,
+            "symbol_scope": "dataset_local_demo_only",
+            "symbol_transferable": False,
+            "anchorworks_lifetime_symbol_compatible": False,
             "anchor_count": 0,
             "anchors": [],
         })
@@ -395,7 +408,7 @@ def expand_query_anchors(anchors: list[str]) -> list[str]:
 
 
 def symbol_for(anchor: str) -> str:
-    return "0x" + sha1_text(anchor)[:10].upper()
+    return "0x" + sha1_text(anchor)[:SYMBOL_HEX_CHARS].upper()
 
 
 def top_relation_neighbors(db: sqlite3.Connection, q_counter: Counter[str], *, limit: int) -> list[dict[str, Any]]:
@@ -618,8 +631,14 @@ def write_lexicon(paths: DatasetPaths, db: sqlite3.Connection) -> None:
         {
             "anchor": str(row["anchor"]),
             "symbol": str(row["symbol"]),
+            "symbol_system": SYMBOL_SYSTEM,
+            "symbol_bytes": SYMBOL_BYTES,
             "observations": int(row["observations"]),
             "scope": "dataset_local",
+            "symbol_scope": "dataset_local_demo_only",
+            "transferable": False,
+            "lifetime_allowed": False,
+            "anchorworks_lifetime_symbol_compatible": False,
             "promotion_allowed": False,
         }
         for row in db.execute("select anchor, symbol, observations from anchors order by anchor")
@@ -628,6 +647,12 @@ def write_lexicon(paths: DatasetPaths, db: sqlite3.Connection) -> None:
         "schema": "awrag_dataset_lexicon@1",
         "dataset_id": paths.root.name,
         "scope": "dataset_local",
+        "symbol_system": SYMBOL_SYSTEM,
+        "symbol_bytes": SYMBOL_BYTES,
+        "symbol_scope": "dataset_local_demo_only",
+        "symbol_transferable": False,
+        "lifetime_allowed": False,
+        "anchorworks_lifetime_symbol_compatible": False,
         "anchor_count": len(anchors),
         "anchors": anchors,
     })
