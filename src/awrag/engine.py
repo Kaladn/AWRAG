@@ -16,6 +16,57 @@ WATERMARK = "AWRAG public-review facsimile output; not source evidence. Verify a
 LICENSE_REF = "AWRAG Public Review License"
 FACSIMILE_WARNING = "This output is a local processing facsimile, not source evidence or professional advice."
 WORD_RE = re.compile(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?|[^\sA-Za-z0-9]", re.UNICODE)
+MAX_BLOCK_LINES = 40
+STOP_ANCHORS = {
+    "a",
+    "about",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "can",
+    "do",
+    "does",
+    "doc",
+    "docs",
+    "document",
+    "documents",
+    "explain",
+    "explained",
+    "explains",
+    "file",
+    "files",
+    "for",
+    "from",
+    "how",
+    "in",
+    "into",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "project",
+    "say",
+    "said",
+    "says",
+    "mention",
+    "mentioned",
+    "mentions",
+    "that",
+    "the",
+    "this",
+    "to",
+    "what",
+    "where",
+    "which",
+    "who",
+    "why",
+    "with",
+}
 
 
 @dataclass(frozen=True)
@@ -169,7 +220,7 @@ def intake(runtime_root: str | Path, dataset_id: str, source: str | Path, *, own
         "sources": source_receipts,
         "paths": public_paths(paths),
     }
-    receipt_path = paths.receipts / f"intake_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+    receipt_path = paths.receipts / f"intake_{unique_stamp()}.json"
     write_json(receipt_path, receipt)
     receipt["receipt_path"] = str(receipt_path)
     return with_protected_notice(receipt)
@@ -178,7 +229,7 @@ def intake(runtime_root: str | Path, dataset_id: str, source: str | Path, *, own
 def query(runtime_root: str | Path, dataset_id: str, question: str, *, top_k: int = 5) -> dict[str, Any]:
     paths = dataset_paths(runtime_root, dataset_id)
     ensure_dataset(runtime_root, dataset_id)
-    q_anchors = anchorize(question)
+    q_anchors = expand_query_anchors(anchorize(question))
     if not q_anchors:
         raise ValueError("question produced no anchors")
     q_counter = Counter(q_anchors)
@@ -205,7 +256,7 @@ def query(runtime_root: str | Path, dataset_id: str, question: str, *, top_k: in
             "locations": candidate_blocks,
         },
     }
-    output_path = paths.outputs / f"query_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+    output_path = paths.outputs / f"query_{unique_stamp()}_{sha1_text(question)[:8]}.json"
     write_json(output_path, output)
     output["output_path"] = str(output_path)
     return with_protected_notice(output)
@@ -278,13 +329,25 @@ def split_blocks(text: str) -> list[dict[str, Any]]:
             current.append(line)
             continue
         if current:
-            blocks.append({"line_start": start, "line_end": index - 1, "text": "\n".join(current)})
+            blocks.extend(chunk_block(current, start))
             current = []
     if current:
-        blocks.append({"line_start": start, "line_end": len(lines), "text": "\n".join(current)})
+        blocks.extend(chunk_block(current, start))
     if not blocks and text:
         blocks.append({"line_start": 1, "line_end": max(1, len(lines)), "text": text})
     return blocks
+
+
+def chunk_block(lines: list[str], start_line: int) -> list[dict[str, Any]]:
+    chunks: list[dict[str, Any]] = []
+    for offset in range(0, len(lines), MAX_BLOCK_LINES):
+        chunk = lines[offset:offset + MAX_BLOCK_LINES]
+        chunks.append({
+            "line_start": start_line + offset,
+            "line_end": start_line + offset + len(chunk) - 1,
+            "text": "\n".join(chunk),
+        })
+    return chunks
 
 
 def anchorize(text: str) -> list[str]:
@@ -293,13 +356,38 @@ def anchorize(text: str) -> list[str]:
         value = match.group(0).strip().casefold()
         if not value:
             continue
+        if not any(ch.isalnum() for ch in value):
+            continue
+        if value in STOP_ANCHORS:
+            continue
         if value.isalnum() and any(ch.isalpha() for ch in value) and any(ch.isdigit() for ch in value):
             anchors.extend(ch for ch in value if ch.isalnum())
-        elif value.isalpha() and len(value) >= 3 and len(value) <= 8 and not any(ch in "aeiou" for ch in value):
-            anchors.extend(value)
         else:
-            anchors.append(value)
+            anchors.append(normalize_anchor(value))
     return anchors
+
+
+def normalize_anchor(anchor: str) -> str:
+    value = str(anchor or "").casefold().strip()
+    if len(value) > 4 and value.endswith("ies"):
+        return value[:-3] + "y"
+    if len(value) > 3 and value.endswith("s") and not value.endswith("ss"):
+        return value[:-1]
+    return value
+
+
+def expand_query_anchors(anchors: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for anchor in anchors:
+        variants = [anchor, normalize_anchor(anchor)]
+        if anchor.isalpha() and len(anchor) > 2:
+            variants.append(anchor + "s")
+        for variant in variants:
+            if variant and variant not in STOP_ANCHORS and variant not in seen:
+                out.append(variant)
+                seen.add(variant)
+    return out
 
 
 def symbol_for(anchor: str) -> str:
@@ -308,25 +396,51 @@ def symbol_for(anchor: str) -> str:
 
 def top_relation_neighbors(db: sqlite3.Connection, q_counter: Counter[str], *, limit: int) -> list[dict[str, Any]]:
     scores: Counter[str] = Counter()
+    blocked = set(q_counter) | STOP_ANCHORS
     for anchor, weight in q_counter.items():
         for row in db.execute("select neighbor, sum(observations) as observations from relations where anchor=? group by neighbor", (anchor,)):
-            scores[str(row["neighbor"])] += int(row["observations"]) * weight
+            neighbor = str(row["neighbor"])
+            if neighbor in blocked:
+                continue
+            scores[neighbor] += int(row["observations"]) * weight
     return [{"anchor": anchor, "score": score} for anchor, score in scores.most_common(limit)]
 
 
 def score_blocks(db: sqlite3.Connection, q_counter: Counter[str], relation_neighbors: list[dict[str, Any]], *, top_k: int) -> list[dict[str, Any]]:
-    weights = Counter(q_counter)
+    weights = Counter()
+    direct_anchors = set(q_counter)
+    for anchor, count in q_counter.items():
+        weights[anchor] += 80 * count
     for index, row in enumerate(relation_neighbors):
-        weights[str(row["anchor"])] += max(1, 8 - index // 2)
+        weights[str(row["anchor"])] += max(1, 4 - index // 4)
     block_scores: Counter[str] = Counter()
     hits: dict[str, set[str]] = {}
+    direct_hits: Counter[str] = Counter()
     for anchor, weight in weights.items():
+        df_row = db.execute("select count(distinct block_id) from block_anchors where anchor=?", (anchor,)).fetchone()
+        document_frequency = int(df_row[0]) if df_row else 1
+        adjusted_weight = weight / max(1.0, document_frequency ** 0.5)
         for row in db.execute("select distinct block_id from block_anchors where anchor=?", (anchor,)):
             block_id = str(row["block_id"])
-            block_scores[block_id] += weight
+            block_scores[block_id] += adjusted_weight
             hits.setdefault(block_id, set()).add(anchor)
+            if anchor in direct_anchors:
+                direct_hits[block_id] += 1
     out: list[dict[str, Any]] = []
-    for block_id, score in block_scores.most_common(top_k):
+    ranked_rows: list[tuple[str, float, float, int]] = []
+    block_lengths = {
+        str(row["block_id"]): int(row["anchor_count"])
+        for row in db.execute("select block_id, count(*) as anchor_count from block_anchors group by block_id")
+    }
+    for block_id, score in block_scores.items():
+        anchor_count = block_lengths.get(block_id, 1)
+        density = float(score) / max(1.0, anchor_count ** 0.5)
+        ranked_rows.append((block_id, float(score), density, anchor_count))
+    ranked = sorted(
+        ranked_rows,
+        key=lambda item: (-direct_hits[item[0]], -item[2], -item[1], item[0]),
+    )
+    for block_id, score, density, anchor_count in ranked[:top_k]:
         block = db.execute(
             "select b.*, c.marker from blocks b join citations c on c.block_id=b.block_id where b.block_id=?",
             (block_id,),
@@ -338,7 +452,10 @@ def score_blocks(db: sqlite3.Connection, q_counter: Counter[str], relation_neigh
             "file_path": str(block["file_path"]),
             "line_start": int(block["line_start"]),
             "line_end": int(block["line_end"]),
-            "score": int(score),
+            "score": round(float(score), 4),
+            "density_score": round(float(density), 4),
+            "block_anchor_count": anchor_count,
+            "direct_hit_count": int(direct_hits[block_id]),
             "matched_anchors": sorted(hits.get(block_id, set())),
             "text": str(block["text"]),
         })
@@ -444,4 +561,8 @@ def sha1_text(value: str) -> str:
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def unique_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
 

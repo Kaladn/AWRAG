@@ -101,3 +101,86 @@ def test_every_persisted_artifact_has_indelible_watermark(tmp_path: Path) -> Non
         for row in rows:
             assert_protected_notice(row)
 
+
+def test_query_prefers_compact_direct_evidence_over_large_noisy_block(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    noisy_lines = ["| Title | Link | Notes |", "| --- | --- | --- |"]
+    noisy_lines.extend(f"| Generic model adapter table row {index} | link | filler data boundary citation installer |" for index in range(90))
+    source.write_text(
+        "\n".join(noisy_lines)
+        + "\n\n"
+        + "Dataset-local counts are explained here. The dataset lexicon and counts stay with the dataset.",
+        encoding="utf-8",
+    )
+    intake(tmp_path / "runtime", "reviewer_docs", source)
+
+    result = query(tmp_path / "runtime", "reviewer_docs", "What explains dataset-local counts?", top_k=3)
+    top = result["answer_packet"]["locations"][0]
+
+    assert "Dataset-local counts are explained here" in top["text"]
+    assert top["direct_hit_count"] >= 2
+
+
+def test_query_ignores_standalone_punctuation_anchors(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text(
+        "Question marks and table pipes should not dominate retrieval.\n\n"
+        "Dataset-local citation rules are explained in this compact block.",
+        encoding="utf-8",
+    )
+    intake(tmp_path / "runtime", "reviewer_docs", source)
+
+    result = query(tmp_path / "runtime", "reviewer_docs", "What are the citation rules?", top_k=2)
+    top = result["answer_packet"]["locations"][0]
+
+    assert "Dataset-local citation rules" in top["text"]
+    assert "?" not in top["matched_anchors"]
+    assert "|" not in top["matched_anchors"]
+
+
+def test_rapid_queries_write_distinct_outputs(tmp_path: Path) -> None:
+    source = tmp_path / "source.txt"
+    source.write_text("Dataset counts stay local. Citations point to source coordinates.", encoding="utf-8")
+    intake(tmp_path / "runtime", "reviewer_docs", source)
+
+    first = query(tmp_path / "runtime", "reviewer_docs", "Where do dataset counts stay?")
+    second = query(tmp_path / "runtime", "reviewer_docs", "Where do citations point?")
+
+    assert first["output_path"] != second["output_path"]
+    assert Path(first["output_path"]).exists()
+    assert Path(second["output_path"]).exists()
+
+
+def test_generic_question_words_do_not_outrank_content_anchors(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text(
+        "The project says many things about files and documents.\n\n"
+        "AWRAG citations are owned by the system and point to dataset-local coordinates.",
+        encoding="utf-8",
+    )
+    intake(tmp_path / "runtime", "reviewer_docs", source)
+
+    result = query(tmp_path / "runtime", "reviewer_docs", "What does the project say about citations?", top_k=2)
+    top = result["answer_packet"]["locations"][0]
+
+    assert "AWRAG citations are owned" in top["text"]
+    assert "say" not in top["matched_anchors"]
+    assert "project" not in top["matched_anchors"]
+
+
+def test_acronym_surfaces_are_casefolded_anchors_not_letter_streams(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text(
+        "Local LLM providers are configured through the model adapter.",
+        encoding="utf-8",
+    )
+    intake(tmp_path / "runtime", "reviewer_docs", source)
+
+    result = query(tmp_path / "runtime", "reviewer_docs", "Where are llm providers configured?", top_k=1)
+    top = result["answer_packet"]["locations"][0]
+
+    assert "Local LLM providers" in top["text"]
+    assert "llm" in top["matched_anchors"]
+    assert "l" not in top["matched_anchors"]
+    assert "m" not in top["matched_anchors"]
+
