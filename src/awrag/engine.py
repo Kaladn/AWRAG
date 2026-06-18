@@ -13,6 +13,8 @@ from typing import Any, Iterable
 
 COPYRIGHT = "Copyright (c) 2026 Lee Mercey. Owner: Cortex Evolved Systems. All rights reserved."
 WATERMARK = "AWRAG public-review facsimile output; not source evidence. Verify against cited source coordinates."
+LICENSE_REF = "AWRAG Public Review License"
+FACSIMILE_WARNING = "This output is a local processing facsimile, not source evidence or professional advice."
 WORD_RE = re.compile(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?|[^\sA-Za-z0-9]", re.UNICODE)
 
 
@@ -63,8 +65,6 @@ def ensure_dataset(runtime_root: str | Path, dataset_id: str, *, owner: str = "o
         write_json(paths.manifest_path, {
             "schema": "awrag_dataset_manifest@1",
             "created_at": utc_now(),
-            "copyright": COPYRIGHT,
-            "watermark": WATERMARK,
             "dataset_id": safe_id(dataset_id),
             "owner": owner,
             "scope": "dataset_local",
@@ -78,8 +78,6 @@ def ensure_dataset(runtime_root: str | Path, dataset_id: str, *, owner: str = "o
     if not paths.lexicon_path.exists():
         write_json(paths.lexicon_path, {
             "schema": "awrag_dataset_lexicon@1",
-            "copyright": COPYRIGHT,
-            "watermark": WATERMARK,
             "dataset_id": safe_id(dataset_id),
             "scope": "dataset_local",
             "anchor_count": 0,
@@ -157,8 +155,6 @@ def intake(runtime_root: str | Path, dataset_id: str, source: str | Path, *, own
     receipt = {
         "schema": "awrag_intake_receipt@1",
         "created_at": utc_now(),
-        "copyright": COPYRIGHT,
-        "watermark": WATERMARK,
         "dataset_id": safe_id(dataset_id),
         "scope": "dataset_local",
         "source": str(source_path),
@@ -176,7 +172,7 @@ def intake(runtime_root: str | Path, dataset_id: str, source: str | Path, *, own
     receipt_path = paths.receipts / f"intake_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
     write_json(receipt_path, receipt)
     receipt["receipt_path"] = str(receipt_path)
-    return receipt
+    return with_protected_notice(receipt)
 
 
 def query(runtime_root: str | Path, dataset_id: str, question: str, *, top_k: int = 5) -> dict[str, Any]:
@@ -195,8 +191,6 @@ def query(runtime_root: str | Path, dataset_id: str, question: str, *, top_k: in
     output = {
         "schema": "awrag_query_result@1",
         "created_at": utc_now(),
-        "copyright": COPYRIGHT,
-        "watermark": WATERMARK,
         "dataset_id": safe_id(dataset_id),
         "scope": "dataset_local",
         "question": question,
@@ -214,7 +208,7 @@ def query(runtime_root: str | Path, dataset_id: str, question: str, *, top_k: in
     output_path = paths.outputs / f"query_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
     write_json(output_path, output)
     output["output_path"] = str(output_path)
-    return output
+    return with_protected_notice(output)
 
 
 def status(runtime_root: str | Path, dataset_id: str) -> dict[str, Any]:
@@ -225,10 +219,8 @@ def status(runtime_root: str | Path, dataset_id: str) -> dict[str, Any]:
         relations = scalar(db, "select count(*) from relations")
         blocks = scalar(db, "select count(*) from blocks")
         citations = scalar(db, "select count(*) from citations")
-    return {
+    return with_protected_notice({
         "schema": "awrag_dataset_status@1",
-        "copyright": COPYRIGHT,
-        "watermark": WATERMARK,
         "dataset_id": safe_id(dataset_id),
         "scope": "dataset_local",
         "dataset_root": str(paths.root),
@@ -239,7 +231,7 @@ def status(runtime_root: str | Path, dataset_id: str) -> dict[str, Any]:
         "block_count": blocks,
         "citation_count": citations,
         "persistent_memory": False,
-    }
+    })
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -366,8 +358,6 @@ def write_lexicon(paths: DatasetPaths, db: sqlite3.Connection) -> None:
     ]
     write_json(paths.lexicon_path, {
         "schema": "awrag_dataset_lexicon@1",
-        "copyright": COPYRIGHT,
-        "watermark": WATERMARK,
         "dataset_id": paths.root.name,
         "scope": "dataset_local",
         "anchor_count": len(anchors),
@@ -379,10 +369,8 @@ def write_citation_jsonl(paths: DatasetPaths, db: sqlite3.Connection) -> None:
     path = paths.citations / "citations.jsonl"
     with path.open("w", encoding="utf-8", newline="\n") as handle:
         for row in db.execute("select * from citations order by citation_id"):
-            handle.write(json.dumps({
+            handle.write(json.dumps(with_protected_notice({
                 "schema": "awrag_citation@1",
-                "copyright": COPYRIGHT,
-                "watermark": WATERMARK,
                 "citation_id": row["citation_id"],
                 "marker": row["marker"],
                 "file_path": row["file_path"],
@@ -390,24 +378,22 @@ def write_citation_jsonl(paths: DatasetPaths, db: sqlite3.Connection) -> None:
                 "line_end": row["line_end"],
                 "text_hash": row["text_hash"],
                 "scope": "dataset_local",
-            }, ensure_ascii=True) + "\n")
+            }), ensure_ascii=True) + "\n")
 
 
 def write_coordinate_index(paths: DatasetPaths, db: sqlite3.Connection) -> None:
     path = paths.coordinates / "coordinate_index.jsonl"
     with path.open("w", encoding="utf-8", newline="\n") as handle:
         for row in db.execute("select block_id, file_path, line_start, line_end, citation_id from blocks order by file_path, line_start"):
-            handle.write(json.dumps({
+            handle.write(json.dumps(with_protected_notice({
                 "schema": "awrag_coordinate@1",
-                "copyright": COPYRIGHT,
-                "watermark": WATERMARK,
                 "block_id": row["block_id"],
                 "file_path": row["file_path"],
                 "line_start": row["line_start"],
                 "line_end": row["line_end"],
                 "citation_id": row["citation_id"],
                 "scope": "dataset_local",
-            }, ensure_ascii=True) + "\n")
+            }), ensure_ascii=True) + "\n")
 
 
 def scalar(db: sqlite3.Connection, sql: str) -> int:
@@ -429,7 +415,27 @@ def public_paths(paths: DatasetPaths) -> dict[str, str]:
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(with_protected_notice(payload), ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+
+
+def protected_notice() -> dict[str, Any]:
+    return {
+        "copyright": COPYRIGHT,
+        "owner": "Cortex Evolved Systems",
+        "license": LICENSE_REF,
+        "watermark": WATERMARK,
+        "facsimile_warning": FACSIMILE_WARNING,
+        "watermark_locked": True,
+        "removal_prohibited": True,
+    }
+
+
+def with_protected_notice(payload: dict[str, Any]) -> dict[str, Any]:
+    protected = protected_notice()
+    protected.update(payload)
+    for key, value in protected_notice().items():
+        protected[key] = value
+    return protected
 
 
 def sha1_text(value: str) -> str:

@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .engine import COPYRIGHT, WATERMARK, ensure_dataset, intake, query, status
+from .engine import ensure_dataset, intake, query, status, with_protected_notice
 
 
 def main() -> None:
@@ -46,11 +46,8 @@ def main() -> None:
     else:
         parser.error("unknown command")
 
-    result.setdefault("copyright", COPYRIGHT)
-    result.setdefault("watermark", WATERMARK)
-    print(json.dumps(result, ensure_ascii=True))
+    print(json.dumps(with_protected_notice(result), ensure_ascii=True))
 
 
 if __name__ == "__main__":
     main()
-

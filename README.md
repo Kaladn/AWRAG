@@ -45,7 +45,7 @@ python -m pip install -e .
 ```powershell
 $runtime = "$HOME\AWRAG_Runtime"
 awrag init --runtime-root $runtime --dataset-id reviewer_docs
-awrag intake --runtime-root $runtime --dataset-id reviewer_docs --source "C:\path\to\docs"
+awrag intake --runtime-root $runtime --dataset-id reviewer_docs --source "<path-to-reviewer-docs>"
 awrag status --runtime-root $runtime --dataset-id reviewer_docs
 awrag query --runtime-root $runtime --dataset-id reviewer_docs --question "What does this dataset say about local counts?"
 ```
