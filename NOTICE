@@ -1,0 +1,18 @@
+AnchorWorks AWRAG Proprietary Notice
+
+Copyright (c) 2026 Lee Mercey.
+Owner: Cortex Evolved Systems.
+All rights reserved.
+
+Public-review watermark:
+Outputs produced by AWRAG are accurate facsimiles of local processing receipts,
+dataset-local coordinates, and citation views. They are not source evidence.
+Source evidence remains the reviewer-provided local data and the coordinates
+recorded for that dataset scope.
+
+Data boundary:
+- RAG counts belong to the dataset.
+- Dataset lexical values belong to the dataset.
+- No persistent/user memory is written by this package.
+- No model is allowed to search.
+- Citations are created by AWRAG from local coordinates.

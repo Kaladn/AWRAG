@@ -1,0 +1,31 @@
+AnchorWorks AWRAG Public Review License
+
+Copyright (c) 2026 Lee Mercey.
+Owner: Cortex Evolved Systems.
+All rights reserved.
+
+This repository is made publicly visible for review, demonstration, and
+evaluation only.
+
+Permitted:
+- View this source code.
+- Clone this repository for private review and local evaluation.
+- Run the software locally on your own data for evaluation.
+- Share security reports, issues, and evaluation feedback with the owner.
+
+Not permitted without explicit written permission from Cortex Evolved Systems:
+- Commercial use.
+- Redistribution.
+- Sublicensing.
+- Offering hosted services or managed services based on this code.
+- Incorporating this code into derivative products.
+- Model training, scraping, dataset generation, or automated extraction from
+  this code, documentation, outputs, or generated artifacts.
+- Removing copyright, ownership, notice, or watermark fields.
+
+No warranty:
+This software is provided for review and demonstration only, without warranty of
+any kind. Generated outputs are facsimile processing artifacts and are not
+source evidence, legal evidence, medical evidence, financial evidence, or
+third-party truth artifacts. Verify against cited source coordinates.
+

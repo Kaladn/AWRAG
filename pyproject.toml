@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "awrag"
+version = "0.1.0"
+description = "AnchorWorks dataset-local RAG demo with local counts, lexicon, coordinates, and citations"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  {name = "Lee Mercey"}
+]
+license = "LicenseRef-AWRAG-Public-Review"
+dependencies = []
+
+[project.scripts]
+awrag = "awrag.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
